@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dropin Inspector</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="panel-container">
+    <div class="panel-header">
+      <h1>🔍 Dropin Inspector</h1>
+      <div class="summary">
+        <span id="container-count">0</span> containers,
+        <span id="slot-count">0</span> slots
+      </div>
+    </div>
+
+    <div class="explorer" id="explorer"></div>
+
+    <div class="panel-footer">
+      <button class="btn btn-primary" id="clear-btn">Clear</button>
+      <button class="btn btn-secondary" id="close-btn">Close</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

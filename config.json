@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "code": {
+    "owner": "skukla",
+    "repo": "citisignal-eds-paas",
+    "source": {
+      "type": "github",
+      "url": "https://github.com/skukla/citisignal-eds-paas"
+    }
+  },
+  "content": {
+    "source": {
+      "url": "https://content.da.live/skukla/citisignal-eds-paas",
+      "type": "onedrive"
+    }
+  },
+  "folders": {
+    "/products/": "/products/default"
+  },
+  "cdn": {
+    "live": {
+      "host": "main--citisignal-eds-paas--skukla.aem.live"
+    },
+    "preview": {
+      "host": "main--citisignal-eds-paas--skukla.aem.page"
+    }
+  },
+  "headers": {},
+  "public": {
+    "default": {
+      "commerce-core-endpoint": "https://edge-sandbox-graph.adobe.io/api/f62031a8-fec4-466a-b4b5-6996d27fa74b/graphql",
+      "commerce-endpoint": "https://catalog-service.adobe.io/graphql",
+      "headers": {
+        "all": {
+          "Store": "default"
+        },
+        "cs": {
+          "Magento-Store-Code": "citisignal_store",
+          "Magento-Store-View-Code": "citisignal_us",
+          "Magento-Website-Code": "citisignal",
+          "x-api-key": "6534c8452daa49ec93bf1595e2082245",
+          "Magento-Environment-Id": "22d69fd7-d43a-43a1-b660-7feeede16247"
+        }
+      },
+      "analytics": {
+        "base-currency-code": "USD",
+        "environment": "Production",
+        "store-id": "1",
+        "store-name": "Main Website Store",
+        "store-url": "main--citisignal-eds-paas--skukla.aem.live",
+        "store-view-id": "1",
+        "store-view-name": "Default Store View",
+        "website-id": "1",
+        "website-name": "Main Website"
+      },
+      "plugins": {
+        "picker": {
+           "rootCategory": "2"
+         }
+      }
+    }
+  },
+  "robots": {
+    "txt": "User-agent: *\nAllow: /\nDisallow: /drafts/\nDisallow: /enrichment/\nDisallow: /tools/\nDisallow: /plugins/experimentation/\n\nSitemap: https://main--citisignal-eds-paas--skukla.aem.live/sitemap-index.xml"
+  },
+  "sidekick": {
+    "project": "Boilerplate",
+    "plugins": [
+      {
+        "id": "cif",
+        "title": "Commerce",
+        "environments": [
+          "edit"
+        ],
+        "url": "https://main--citisignal-eds-paas--skukla.aem.live/tools/picker/dist/index.html",
+        "isPalette": true,
+        "paletteRect": "top: 54px; left: 5px; bottom: 5px; width: 300px; height: calc(100% - 59px); border-radius: var(--hlx-sk-button-border-radius); overflow: hidden; resize: horizontal;"
+      },
+      {
+        "id": "personalisation",
+        "title": "Personalisation",
+        "environments": [
+          "edit"
+        ],
+        "url": "https://main--citisignal-eds-paas--skukla.aem.live/tools/segments/dist/index.html",
+        "isPalette": true,
+        "paletteRect": "top: 54px; left: 5px; bottom: 5px; width: 300px; height: calc(100% - 59px); border-radius: var(--hlx-sk-button-border-radius); overflow: hidden; resize: horizontal;"
+      }
+    ]
+  },
+  "access": {
+    "admin": {
+      "role": {
+        "config_admin": [
+          ""
+        ]
+      },
+      "requireAuth": "auto"
+    }
+  }
+}
