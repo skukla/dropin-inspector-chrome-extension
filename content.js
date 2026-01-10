@@ -1,7 +1,27 @@
 const elementState = new Map();
 const labelElements = new Map();
 
+// Valid actions for message validation
+const VALID_ACTIONS = ['getStructure', 'highlight', 'clearHighlight', 'clearAll'];
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Validate message structure
+  if (!request || typeof request.action !== 'string') {
+    return;
+  }
+
+  // Validate action is known
+  if (!VALID_ACTIONS.includes(request.action)) {
+    return;
+  }
+
+  // Validate elementId format when required (prevents injection via malformed IDs)
+  if ((request.action === 'highlight' || request.action === 'clearHighlight') && request.elementId) {
+    if (typeof request.elementId !== 'string' || !/^(container|slot)-\d+(-\d+)?$/.test(request.elementId)) {
+      return;
+    }
+  }
+
   if (request.action === 'getStructure') {
     const structure = initializeStructure();
     sendResponse({ structure });
@@ -130,6 +150,13 @@ function clearHighlight(elementId) {
   element.style.zIndex = originalStyles.zIndex;
 
   elementState.delete(elementId);
+
+  // Call cleanup to remove event listeners (prevents memory leak)
+  const cleanup = elementState.get(elementId + '-cleanup');
+  if (cleanup) {
+    cleanup();
+    elementState.delete(elementId + '-cleanup');
+  }
 
   // Remove label
   const label = labelElements.get(elementId);

@@ -3,6 +3,13 @@ let expandedContainers = new Set();
 const checkedContainers = new Map();
 const checkedSlots = new Map();
 
+// Helper to send messages to the active tab (reduces duplication)
+function sendToActiveTab(message, callback) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.sendMessage(tabs[0].id, message, callback);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   loadStructure();
   setupEventListeners();
@@ -20,31 +27,36 @@ function setupEventListeners() {
 }
 
 function loadStructure() {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    chrome.tabs.sendMessage(
-      tabs[0].id,
-      { action: 'getStructure' },
-      (response) => {
-        if (response && response.structure) {
-          currentStructure = response.structure;
-          renderExplorer();
-          updateSummary();
-        } else {
-          renderEmptyState();
-        }
-      }
-    );
+  sendToActiveTab({ action: 'getStructure' }, (response) => {
+    if (response && response.structure) {
+      currentStructure = response.structure;
+      renderExplorer();
+      updateSummary();
+    } else {
+      renderEmptyState();
+    }
   });
 }
 
 function renderEmptyState() {
   const explorer = document.getElementById('explorer');
-  explorer.innerHTML = `
-    <div class="empty-state">
-      <div class="icon">📦</div>
-      <div class="message">No dropins found on this page</div>
-    </div>
-  `;
+  explorer.innerHTML = '';
+
+  const emptyState = document.createElement('div');
+  emptyState.className = 'empty-state';
+
+  const icon = document.createElement('div');
+  icon.className = 'icon';
+  icon.textContent = '\u{1F4E6}'; // Package emoji
+
+  const message = document.createElement('div');
+  message.className = 'message';
+  message.textContent = 'No dropins found on this page';
+
+  emptyState.appendChild(icon);
+  emptyState.appendChild(message);
+  explorer.appendChild(emptyState);
+
   document.getElementById('container-count').textContent = '0';
   document.getElementById('slot-count').textContent = '0';
 }
@@ -194,21 +206,17 @@ function toggleContainer(containerId, isChecked) {
       checkedSlots.delete(slot.id);
     });
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, {
-        action: 'highlight',
-        elementId: containerId,
-        label: container.name,
-      });
+    sendToActiveTab({
+      action: 'highlight',
+      elementId: containerId,
+      label: container.name,
     });
   } else {
     checkedContainers.delete(containerId);
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, {
-        action: 'clearHighlight',
-        elementId: containerId,
-      });
+    sendToActiveTab({
+      action: 'clearHighlight',
+      elementId: containerId,
     });
   }
 
@@ -223,21 +231,17 @@ function toggleSlot(slotId, isChecked, containerId) {
   if (isChecked) {
     checkedSlots.set(slotId, true);
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, {
-        action: 'highlight',
-        elementId: slotId,
-        label: `${container.name} > ${slot.name}`,
-      });
+    sendToActiveTab({
+      action: 'highlight',
+      elementId: slotId,
+      label: `${container.name} > ${slot.name}`,
     });
   } else {
     checkedSlots.delete(slotId);
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, {
-        action: 'clearHighlight',
-        elementId: slotId,
-      });
+    sendToActiveTab({
+      action: 'clearHighlight',
+      elementId: slotId,
     });
   }
 
@@ -250,9 +254,7 @@ function clearHighlights() {
   checkedSlots.clear();
   expandedContainers.clear();
 
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    chrome.tabs.sendMessage(tabs[0].id, { action: 'clearAll' });
-  });
+  sendToActiveTab({ action: 'clearAll' });
 
   renderExplorer();
   updateSummary();
