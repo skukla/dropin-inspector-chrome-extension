@@ -17,9 +17,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function initializeStructure() {
   const containers = [];
 
-  // Updated selectors - adjust based on your dropin structure
+  // Adobe EDS-specific dropin selectors (avoids false positives from generic class names)
   const containerElements = document.querySelectorAll(
-    '[data-dropin-container], [class*="container"]'
+    '[data-dropin], [data-dropin-container], .dropin__container, [class^="dropin-"], [class*=" dropin-"]'
   );
 
   containerElements.forEach((containerEl, index) => {
@@ -30,7 +30,7 @@ function initializeStructure() {
       `Container ${index + 1}`;
 
     const slots = [];
-    const slotElements = containerEl.querySelectorAll('[data-dropin-slot], [class*="slot"]');
+    const slotElements = containerEl.querySelectorAll('[data-dropin-slot], .dropin__slot, [class^="dropin-"][class*="slot"], [class*=" dropin-"][class*="slot"]');
 
     slotElements.forEach((slotEl, slotIndex) => {
       const slotId = `slot-${index}-${slotIndex}`;

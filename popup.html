@@ -9,18 +9,22 @@
 <body>
   <div id="panel-container">
     <div class="panel-header">
-      <h1>🔍 Dropin Inspector</h1>
-      <div class="summary">
-        <span id="container-count">0</span> containers,
-        <span id="slot-count">0</span> slots
+      <span class="panel-title">DROPIN STRUCTURE</span>
+      <div class="header-controls">
+        <button class="control-btn" id="minimize-btn" title="Minimize">−</button>
+        <button class="control-btn" id="close-btn" title="Close">×</button>
       </div>
+    </div>
+
+    <div class="summary">
+      <span id="container-count">0</span> containers • <span id="slot-count">0</span> slots
     </div>
 
     <div class="explorer" id="explorer"></div>
 
     <div class="panel-footer">
-      <button class="btn btn-primary" id="clear-btn">Clear</button>
-      <button class="btn btn-secondary" id="close-btn">Close</button>
+      <button class="btn btn-primary" id="refresh-btn">Refresh</button>
+      <button class="btn btn-secondary" id="clear-btn">Clear All</button>
     </div>
   </div>
 

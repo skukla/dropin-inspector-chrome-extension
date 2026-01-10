@@ -11,6 +11,12 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupEventListeners() {
   document.getElementById('clear-btn').addEventListener('click', clearHighlights);
   document.getElementById('close-btn').addEventListener('click', closePanel);
+  document.getElementById('refresh-btn').addEventListener('click', loadStructure);
+  document.getElementById('minimize-btn').addEventListener('click', () => {
+    // Toggle minimized state (could collapse explorer)
+    const explorer = document.getElementById('explorer');
+    explorer.classList.toggle('hidden');
+  });
 }
 
 function loadStructure() {
@@ -23,15 +29,34 @@ function loadStructure() {
           currentStructure = response.structure;
           renderExplorer();
           updateSummary();
+        } else {
+          renderEmptyState();
         }
       }
     );
   });
 }
 
+function renderEmptyState() {
+  const explorer = document.getElementById('explorer');
+  explorer.innerHTML = `
+    <div class="empty-state">
+      <div class="icon">📦</div>
+      <div class="message">No dropins found on this page</div>
+    </div>
+  `;
+  document.getElementById('container-count').textContent = '0';
+  document.getElementById('slot-count').textContent = '0';
+}
+
 function renderExplorer() {
   const explorer = document.getElementById('explorer');
   explorer.innerHTML = '';
+
+  if (!currentStructure || currentStructure.length === 0) {
+    renderEmptyState();
+    return;
+  }
 
   currentStructure.forEach((container) => {
     const containerGroup = document.createElement('div');
@@ -39,17 +64,28 @@ function renderExplorer() {
 
     const containerItem = document.createElement('div');
     containerItem.className = 'container-item';
+
+    const isContainerChecked = checkedContainers.get(container.id) === true;
+
     if (expandedContainers.has(container.id)) {
       containerItem.classList.add('expanded');
+    }
+    if (isContainerChecked) {
+      containerItem.classList.add('active');
     }
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.checked = checkedContainers.get(container.id) === true;
+    checkbox.checked = isContainerChecked;
     checkbox.addEventListener('change', (e) => {
       e.stopPropagation();
       toggleContainer(container.id, checkbox.checked);
     });
+
+    // Add icon
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = '📦';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'name';
@@ -57,18 +93,22 @@ function renderExplorer() {
     const label = document.createElement('span');
     label.textContent = container.name;
 
+    nameSpan.appendChild(icon);
     nameSpan.appendChild(label);
 
     const arrow = document.createElement('span');
     arrow.className = 'arrow';
-    arrow.textContent = '▼';
+    arrow.textContent = '▶';
 
     containerItem.appendChild(checkbox);
     containerItem.appendChild(nameSpan);
 
     if (container.slots.length > 0) {
       containerItem.appendChild(arrow);
-      containerItem.addEventListener('click', () => {
+      containerItem.addEventListener('click', (e) => {
+        // Don't toggle if clicking checkbox
+        if (e.target.type === 'checkbox') return;
+
         if (expandedContainers.has(container.id)) {
           expandedContainers.delete(container.id);
           containerItem.classList.remove('expanded');
@@ -96,12 +136,17 @@ function renderExplorer() {
         const slotItem = document.createElement('div');
         slotItem.className = 'slot-item';
 
-        const slotCheckbox = document.createElement('input');
-        slotCheckbox.type = 'checkbox';
-
-        const isContainerChecked = checkedContainers.get(container.id) === true;
         const isSlotChecked = checkedSlots.get(slot.id) === true;
 
+        if (isContainerChecked) {
+          slotItem.classList.add('disabled');
+        }
+        if (isSlotChecked && !isContainerChecked) {
+          slotItem.classList.add('active');
+        }
+
+        const slotCheckbox = document.createElement('input');
+        slotCheckbox.type = 'checkbox';
         slotCheckbox.checked = isSlotChecked && !isContainerChecked;
         slotCheckbox.disabled = isContainerChecked;
 
@@ -110,17 +155,29 @@ function renderExplorer() {
           toggleSlot(slot.id, slotCheckbox.checked, container.id);
         });
 
+        // Add indicator
+        const indicator = document.createElement('span');
+        indicator.className = 'indicator';
+        indicator.textContent = '■';
+
         const slotName = document.createElement('span');
         slotName.className = 'name';
-        slotName.textContent = `${container.name} > ${slot.name}`;
+        slotName.textContent = slot.name;
 
         slotItem.appendChild(slotCheckbox);
+        slotItem.appendChild(indicator);
         slotItem.appendChild(slotName);
 
         slotsContainer.appendChild(slotItem);
       });
 
       containerGroup.appendChild(slotsContainer);
+    } else {
+      // Show "no slots" message
+      const noSlots = document.createElement('div');
+      noSlots.className = 'no-slots';
+      noSlots.textContent = 'No slots';
+      containerGroup.appendChild(noSlots);
     }
 
     explorer.appendChild(containerGroup);
@@ -207,10 +264,10 @@ function closePanel() {
 }
 
 function updateSummary() {
-  const containerCount =
-    currentStructure.reduce((sum, c) => sum + 1, 0) || 0;
-  const slotCount =
-    currentStructure.reduce((sum, c) => sum + c.slots.length, 0) || 0;
+  const containerCount = currentStructure ? currentStructure.length : 0;
+  const slotCount = currentStructure
+    ? currentStructure.reduce((sum, c) => sum + c.slots.length, 0)
+    : 0;
 
   document.getElementById('container-count').textContent = containerCount;
   document.getElementById('slot-count').textContent = slotCount;
