@@ -4,6 +4,10 @@
 (function() {
   'use strict';
 
+  // ============================================================================
+  // SECTION: State & Constants
+  // ============================================================================
+
   // State
   let panel = null;
   let isVisible = false;
@@ -21,6 +25,26 @@
   const STORAGE_KEY_POSITION = 'dropinInspector_position';
   const STORAGE_KEY_SHOW_EMPTY = 'dropinInspector_showEmpty';
 
+  // HTML sanitization for XSS prevention
+  function escapeHtml(str) {
+    if (typeof str !== 'string') return str;
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // Timing constants (ms)
+  const TIMING = {
+    DEBOUNCE: 300,           // Debounce delay for structure refresh
+    SCROLL_SETTLE: 50,       // Wait for DOM after instant scroll
+    SMOOTH_SCROLL: 400,      // Wait for smooth scroll animation
+    PAGE_LOAD: 500,          // Wait for page content after navigation
+    NAV_POLL: 500            // Interval for SPA navigation detection
+  };
+
   // Styles for highlighting
   const TYPE_STYLES = {
     block: {
@@ -37,317 +61,9 @@
     }
   };
 
-  // Panel CSS
-  const PANEL_CSS = `
-    #dropin-inspector-panel {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      width: 300px;
-      max-height: 90vh;
-      background: rgba(255, 255, 255, 0.98);
-      border-radius: 12px;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 13px;
-      z-index: 999999;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    #dropin-inspector-panel * {
-      box-sizing: border-box;
-    }
-
-    #dropin-inspector-panel.hidden {
-      display: none !important;
-    }
-
-    .di-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 12px;
-      background: linear-gradient(135deg, #6366f1, #4f46e5);
-      color: white;
-      cursor: move;
-      user-select: none;
-    }
-
-    .di-title {
-      font-weight: 600;
-      font-size: 12px;
-      letter-spacing: 0.5px;
-    }
-
-    .di-controls {
-      display: flex;
-      gap: 4px;
-    }
-
-    .di-control-btn {
-      background: rgba(255, 255, 255, 0.2);
-      border: none;
-      border-radius: 4px;
-      padding: 2px 8px;
-      cursor: pointer;
-      color: white;
-      font-size: 14px;
-      line-height: 1;
-    }
-
-    .di-control-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-    }
-
-    .di-summary {
-      padding: 8px 12px;
-      font-size: 11px;
-      color: #6b7280;
-      border-bottom: 1px solid #e5e7eb;
-      background: #f9fafb;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .di-summary-text {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      border-radius: 4px;
-      padding: 2px 4px;
-      margin: -2px -4px;
-      transition: background 0.15s;
-    }
-
-    .di-summary-text:hover {
-      background: rgba(0, 0, 0, 0.05);
-    }
-
-    .di-toggle-wrapper {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 10px;
-      color: #9ca3af;
-    }
-
-    .di-toggle {
-      position: relative;
-      width: 28px;
-      height: 16px;
-      background: #d1d5db;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.2s ease;
-    }
-
-    .di-toggle::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 12px;
-      height: 12px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.2s ease;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-
-    .di-toggle.active {
-      background: #6366f1;
-    }
-
-    .di-toggle.active::after {
-      transform: translateX(12px);
-    }
-
-    .di-watching {
-      width: 6px;
-      height: 6px;
-      background: #22c55e;
-      border-radius: 50%;
-    }
-
-    .di-explorer {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px;
-      max-height: calc(90vh - 130px);
-    }
-
-    .di-block-group {
-      margin-bottom: 4px;
-    }
-
-    .di-slot-group {
-      margin-bottom: 2px;
-    }
-
-    .di-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    .di-item:hover {
-      background: #f3f4f6;
-    }
-
-    .di-item.active {
-      color: white;
-    }
-
-    .di-item-block.active {
-      background: linear-gradient(135deg, #818cf8, #6366f1);
-    }
-
-    .di-item-slot.active {
-      background: linear-gradient(135deg, #4ade80, #22c55e);
-    }
-
-    .di-item.nested {
-      margin-left: 16px;
-    }
-
-    .di-arrow {
-      width: 14px;
-      font-size: 9px;
-      color: #9ca3af;
-      text-align: center;
-      flex-shrink: 0;
-    }
-
-    .di-icon {
-      width: 14px;
-      height: 14px;
-      flex-shrink: 0;
-      opacity: 0.6;
-    }
-
-    .di-item.active .di-icon {
-      opacity: 1;
-    }
-
-    .di-icon svg {
-      width: 14px;
-      height: 14px;
-    }
-
-    .di-item-block .di-icon {
-      color: #6366f1;
-    }
-
-    .di-item-slot .di-icon {
-      color: #22c55e;
-    }
-
-    .di-item.active .di-icon {
-      color: white;
-    }
-
-    .di-name {
-      flex: 1;
-      font-size: 12px;
-      font-weight: 500;
-    }
-
-    .di-badge {
-      background: #e5e7eb;
-      color: #6b7280;
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 10px;
-    }
-
-    .di-item.active .di-badge {
-      background: rgba(255, 255, 255, 0.25);
-      color: white;
-    }
-
-    .di-children {
-      display: none;
-      margin-top: 2px;
-      padding-left: 4px;
-      border-left: 1px solid #e5e7eb;
-      margin-left: 6px;
-    }
-
-    .di-children.visible {
-      display: block;
-    }
-
-    .di-block-group .di-block-group {
-      margin-bottom: 2px;
-    }
-
-    .di-footer {
-      display: flex;
-      gap: 6px;
-      padding: 8px 12px;
-      border-top: 1px solid #e5e7eb;
-      background: #f9fafb;
-    }
-
-    .di-btn {
-      flex: 1;
-      padding: 6px 12px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 500;
-      font-family: inherit;
-    }
-
-    .di-btn-primary {
-      background: linear-gradient(135deg, #6366f1, #4f46e5);
-      color: white;
-    }
-
-    .di-btn-secondary {
-      background: white;
-      color: #374151;
-      border: 1px solid #d1d5db;
-    }
-
-    .di-btn:hover {
-      opacity: 0.9;
-    }
-
-    .di-empty {
-      text-align: center;
-      padding: 24px;
-      color: #9ca3af;
-    }
-
-    .di-empty-icon {
-      font-size: 24px;
-      margin-bottom: 8px;
-    }
-
-    .di-explorer::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    .di-explorer::-webkit-scrollbar-track {
-      background: #f3f4f6;
-    }
-
-    .di-explorer::-webkit-scrollbar-thumb {
-      background: #d1d5db;
-      border-radius: 3px;
-    }
-  `;
+  // ============================================================================
+  // SECTION: Icons (SVG)
+  // ============================================================================
 
   // Icons
   const ICONS = {
@@ -357,14 +73,19 @@
     slot: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.315 8.69c.218-.22.346-.549.276-.837-.07-.471-.48-.802-.925-.968a2.501 2.501 0 1 1 3.214-3.214c.166.446.497.855.968.925.288.07.617-.058.837-.276l1.61-1.611a2.404 2.404 0 0 1 1.705-.706c.618 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.969a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"></path></svg>`
   };
 
+  // ============================================================================
+  // SECTION: Panel Creation
+  // ============================================================================
+
   // Initialize panel
   function createPanel() {
     if (panel) return;
 
-    // Inject styles
-    const style = document.createElement('style');
-    style.textContent = PANEL_CSS;
-    document.head.appendChild(style);
+    // Inject styles via external CSS file
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = chrome.runtime.getURL('panel.css');
+    document.head.appendChild(link);
 
     // Create panel
     panel = document.createElement('div');
@@ -406,6 +127,10 @@
     initDrag();
   }
 
+  // ============================================================================
+  // SECTION: Drag Functionality
+  // ============================================================================
+
   // Drag functionality
   function initDrag() {
     const header = panel.querySelector('.di-header');
@@ -439,6 +164,10 @@
       }
     });
   }
+
+  // ============================================================================
+  // SECTION: Visibility Control
+  // ============================================================================
 
   // Toggle panel visibility
   function togglePanel() {
@@ -540,6 +269,10 @@
       }
     });
   }
+
+  // ============================================================================
+  // SECTION: Structure Detection
+  // ============================================================================
 
   // Get vertical position of element for sorting
   function getVerticalPosition(el) {
@@ -803,6 +536,10 @@
     return { blocks, totals: { blocks: totalBlocks, slots: totalSlots } };
   }
 
+  // ============================================================================
+  // SECTION: DOM Observer
+  // ============================================================================
+
   // MutationObserver to detect async-loaded dropins
   function startObserver() {
     if (observer) return;
@@ -832,7 +569,7 @@
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           loadStructure();
-        }, 300);
+        }, TIMING.DEBOUNCE);
       }
     });
 
@@ -848,6 +585,10 @@
       observer = null;
     }
   }
+
+  // ============================================================================
+  // SECTION: Rendering
+  // ============================================================================
 
   // Load and render structure
   function loadStructure() {
@@ -906,7 +647,6 @@
       if (!block) return;
 
       const arrow = blockEl.querySelector('.di-arrow');
-      const blockGroup = blockEl.closest('.di-block-group');
 
       arrow.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -919,7 +659,7 @@
 
       blockEl.addEventListener('click', (e) => {
         if (!e.target.closest('.di-arrow')) {
-          toggleHighlight(block.id, block.name, 'block', blockEl);
+          toggleHighlight(block.id, block.name, blockEl);
         }
       });
     });
@@ -945,7 +685,7 @@
 
       slotEl.addEventListener('click', (e) => {
         if (!e.target.closest('.di-arrow')) {
-          toggleHighlight(slot.id, slot.name, 'slot', slotEl);
+          toggleHighlight(slot.id, slot.name, slotEl);
         }
       });
     });
@@ -964,7 +704,7 @@
       <div class="di-item di-item-block${isActive ? ' active' : ''}"${indent} data-block-id="${block.id}">
         <span class="di-arrow">${hasChildren ? (isExpanded ? '▼' : '▶') : ''}</span>
         <span class="di-icon">${ICONS.block}</span>
-        <span class="di-name">${block.name}</span>
+        <span class="di-name">${escapeHtml(block.name)}</span>
         ${hasChildren ? `<span class="di-badge">${childCount}</span>` : ''}
       </div>
     `;
@@ -1011,7 +751,7 @@
               <div class="di-item di-item-slot nested${slotActive ? ' active' : ''}" style="margin-left: ${slotIndent}px" data-slot-id="${slot.id}">
                 <span class="di-arrow">${slotHasChildren ? (slotExpanded ? '▼' : '▶') : ''}</span>
                 <span class="di-icon">${ICONS.slot}</span>
-                <span class="di-name">${slot.name}</span>
+                <span class="di-name">${escapeHtml(slot.name)}</span>
                 ${slotHasChildren ? `<span class="di-badge">${slot.children.length}</span>` : ''}
               </div>
               ${slotHasChildren ? `
@@ -1049,8 +789,12 @@
     summary.innerHTML = `<span class="di-watching" title="Watching for changes"></span>${totals.blocks} blocks • ${totals.slots} slots`;
   }
 
+  // ============================================================================
+  // SECTION: Highlighting
+  // ============================================================================
+
   // Highlighting
-  function toggleHighlight(itemId, itemName, type, itemEl) {
+  function toggleHighlight(itemId, itemName, itemEl) {
     const structure = initializeStructure();
 
     if (activeItems.has(itemId)) {
@@ -1059,14 +803,14 @@
       itemEl.classList.remove('active');
     } else {
       activeItems.add(itemId);
-      highlightElement(itemId, itemName, type, structure);
+      highlightElement(itemId, itemName, structure);
       itemEl.classList.add('active');
     }
 
     updateToggleButton();
   }
 
-  function highlightElement(elementId, label, type, structure, skipScroll = false) {
+  function highlightElement(elementId, label, structure, skipScroll = false) {
     const elementType = elementId.split('-')[0];
     let element = null;
 
@@ -1144,7 +888,7 @@
         // Small delay for DOM to settle after instant scroll
         setTimeout(() => {
           createLabel(elementId, element, label, elementType);
-        }, 50);
+        }, TIMING.SCROLL_SETTLE);
       } else {
         // Normal elements: check if it's a long scroll
         const scrollDistance = Math.abs(rect.top);
@@ -1154,12 +898,12 @@
           element.scrollIntoView({ behavior: 'auto', block: 'center' });
           setTimeout(() => {
             createLabel(elementId, element, label, elementType);
-          }, 50);
+          }, TIMING.SCROLL_SETTLE);
         } else {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           setTimeout(() => {
             createLabel(elementId, element, label, elementType);
-          }, 400);
+          }, TIMING.SMOOTH_SCROLL);
         }
       }
     }
@@ -1217,12 +961,12 @@
       blocks.forEach(block => {
         if (!activeItems.has(block.id)) {
           activeItems.add(block.id);
-          highlightElement(block.id, block.name, 'block', structure, true);
+          highlightElement(block.id, block.name, structure, true);
         }
         block.slots.forEach(slot => {
           if (!activeItems.has(slot.id)) {
             activeItems.add(slot.id);
-            highlightElement(slot.id, slot.name, 'slot', structure, true);
+            highlightElement(slot.id, slot.name, structure, true);
           }
         });
         if (block.children && block.children.length > 0) {
@@ -1259,6 +1003,10 @@
     }
   }
 
+  // ============================================================================
+  // SECTION: Label Positioning
+  // ============================================================================
+
   // Check if two rectangles overlap
   function rectsOverlap(rect1, rect2) {
     return !(rect1.right < rect2.left ||
@@ -1269,7 +1017,7 @@
 
   // Find best non-overlapping position for a label
   // Alternates preference between above/below to spread out labels
-  function findBestLabelPosition(label, elementRect, currentElement, adjustedScrollTop = null) {
+  function findBestLabelPosition(label, elementRect, adjustedScrollTop = null) {
     const labelWidth = label.offsetWidth;
     const labelHeight = label.offsetHeight;
     // Use adjusted scroll position if provided (for pending scrolls)
@@ -1404,7 +1152,6 @@
     const rect = element.getBoundingClientRect();
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
     const viewportHeight = window.innerHeight;
-    const labelHeight = label.offsetHeight;
 
     // For tall elements (taller than viewport), position label at the visible top
     // rather than the geometric top of the element
@@ -1446,7 +1193,7 @@
 
     // Find best position (tries above, below, right, left)
     // Pass adjustedScrollTop to account for pending scroll
-    const finalPosition = findBestLabelPosition(label, effectiveRect, element, adjustedScrollTop);
+    const finalPosition = findBestLabelPosition(label, effectiveRect, adjustedScrollTop);
 
     // Ensure label stays within viewport (use adjusted scroll position)
     finalPosition.top = Math.max(adjustedScrollTop + 4, finalPosition.top);
@@ -1465,6 +1212,10 @@
 
     labelElements.set(elementId, label);
   }
+
+  // ============================================================================
+  // SECTION: State Persistence
+  // ============================================================================
 
   // Save panel state to storage
   function saveState() {
@@ -1508,6 +1259,10 @@
     });
   }
 
+  // ============================================================================
+  // SECTION: Navigation Watching
+  // ============================================================================
+
   // Watch for SPA navigation (URL changes without page reload)
   function watchNavigation() {
     // Check URL periodically for SPA navigation
@@ -1523,10 +1278,10 @@
           activeItems.clear();
 
           // Refresh structure for new page
-          setTimeout(() => loadStructure(), 500);
+          setTimeout(() => loadStructure(), TIMING.PAGE_LOAD);
         }
       }
-    }, 500);
+    }, TIMING.NAV_POLL);
 
     // Also listen for popstate (back/forward navigation)
     window.addEventListener('popstate', () => {
@@ -1538,10 +1293,14 @@
           elementState.clear();
           activeItems.clear();
           loadStructure();
-        }, 500);
+        }, TIMING.PAGE_LOAD);
       }
     });
   }
+
+  // ============================================================================
+  // SECTION: Initialization
+  // ============================================================================
 
   // Message listener
   chrome.runtime.onMessage.addListener((request) => {
