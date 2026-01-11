@@ -1,9 +1,8 @@
 let currentStructure = null;
-let expandedContainers = new Set();
-const checkedContainers = new Map();
-const checkedSlots = new Map();
+const expandedBlocks = new Set(); // Track which blocks are expanded
+const activeItems = new Set(); // Track active (highlighted) items by ID
 
-// Helper to send messages to the active tab (reduces duplication)
+// Helper to send messages to the active tab
 function sendToActiveTab(message, callback) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.tabs.sendMessage(tabs[0].id, message, callback);
@@ -20,7 +19,6 @@ function setupEventListeners() {
   document.getElementById('close-btn').addEventListener('click', closePanel);
   document.getElementById('refresh-btn').addEventListener('click', loadStructure);
   document.getElementById('minimize-btn').addEventListener('click', () => {
-    // Toggle minimized state (could collapse explorer)
     const explorer = document.getElementById('explorer');
     explorer.classList.toggle('hidden');
   });
@@ -47,7 +45,7 @@ function renderEmptyState() {
 
   const icon = document.createElement('div');
   icon.className = 'icon';
-  icon.textContent = '\u{1F4E6}'; // Package emoji
+  icon.textContent = '\u{1F4E6}';
 
   const message = document.createElement('div');
   message.className = 'message';
@@ -57,7 +55,7 @@ function renderEmptyState() {
   emptyState.appendChild(message);
   explorer.appendChild(emptyState);
 
-  document.getElementById('container-count').textContent = '0';
+  document.getElementById('block-count').textContent = '0';
   document.getElementById('slot-count').textContent = '0';
 }
 
@@ -65,199 +63,164 @@ function renderExplorer() {
   const explorer = document.getElementById('explorer');
   explorer.innerHTML = '';
 
-  if (!currentStructure || currentStructure.length === 0) {
+  if (!currentStructure || !currentStructure.blocks) {
     renderEmptyState();
     return;
   }
 
-  currentStructure.forEach((container) => {
-    const containerGroup = document.createElement('div');
-    containerGroup.className = 'container-group';
+  const { blocks } = currentStructure;
 
-    const containerItem = document.createElement('div');
-    containerItem.className = 'container-item';
+  if (blocks.length === 0) {
+    renderEmptyState();
+    return;
+  }
 
-    const isContainerChecked = checkedContainers.get(container.id) === true;
-
-    if (expandedContainers.has(container.id)) {
-      containerItem.classList.add('expanded');
-    }
-    if (isContainerChecked) {
-      containerItem.classList.add('active');
-    }
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = isContainerChecked;
-    checkbox.addEventListener('change', (e) => {
-      e.stopPropagation();
-      toggleContainer(container.id, checkbox.checked);
-    });
-
-    // Add icon
-    const icon = document.createElement('span');
-    icon.className = 'icon';
-    icon.textContent = '📦';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'name';
-
-    const label = document.createElement('span');
-    label.textContent = container.name;
-
-    nameSpan.appendChild(icon);
-    nameSpan.appendChild(label);
-
-    const arrow = document.createElement('span');
-    arrow.className = 'arrow';
-    arrow.textContent = '▶';
-
-    containerItem.appendChild(checkbox);
-    containerItem.appendChild(nameSpan);
-
-    if (container.slots.length > 0) {
-      containerItem.appendChild(arrow);
-      containerItem.addEventListener('click', (e) => {
-        // Don't toggle if clicking checkbox
-        if (e.target.type === 'checkbox') return;
-
-        if (expandedContainers.has(container.id)) {
-          expandedContainers.delete(container.id);
-          containerItem.classList.remove('expanded');
-        } else {
-          expandedContainers.add(container.id);
-          containerItem.classList.add('expanded');
-        }
-        const slotsContainer = containerGroup.querySelector('.slots-container');
-        if (slotsContainer) {
-          slotsContainer.classList.toggle('visible');
-        }
-      });
-    }
-
-    containerGroup.appendChild(containerItem);
-
-    if (container.slots.length > 0) {
-      const slotsContainer = document.createElement('div');
-      slotsContainer.className = 'slots-container';
-      if (expandedContainers.has(container.id)) {
-        slotsContainer.classList.add('visible');
-      }
-
-      container.slots.forEach((slot) => {
-        const slotItem = document.createElement('div');
-        slotItem.className = 'slot-item';
-
-        const isSlotChecked = checkedSlots.get(slot.id) === true;
-
-        if (isContainerChecked) {
-          slotItem.classList.add('disabled');
-        }
-        if (isSlotChecked && !isContainerChecked) {
-          slotItem.classList.add('active');
-        }
-
-        const slotCheckbox = document.createElement('input');
-        slotCheckbox.type = 'checkbox';
-        slotCheckbox.checked = isSlotChecked && !isContainerChecked;
-        slotCheckbox.disabled = isContainerChecked;
-
-        slotCheckbox.addEventListener('change', (e) => {
-          e.stopPropagation();
-          toggleSlot(slot.id, slotCheckbox.checked, container.id);
-        });
-
-        // Add indicator
-        const indicator = document.createElement('span');
-        indicator.className = 'indicator';
-        indicator.textContent = '■';
-
-        const slotName = document.createElement('span');
-        slotName.className = 'name';
-        slotName.textContent = slot.name;
-
-        slotItem.appendChild(slotCheckbox);
-        slotItem.appendChild(indicator);
-        slotItem.appendChild(slotName);
-
-        slotsContainer.appendChild(slotItem);
-      });
-
-      containerGroup.appendChild(slotsContainer);
-    } else {
-      // Show "no slots" message
-      const noSlots = document.createElement('div');
-      noSlots.className = 'no-slots';
-      noSlots.textContent = 'No slots';
-      containerGroup.appendChild(noSlots);
-    }
-
-    explorer.appendChild(containerGroup);
+  // Render each block as an expandable item
+  blocks.forEach((block) => {
+    const hasSlots = block.slots.length > 0;
+    const blockEl = renderBlock(block, hasSlots);
+    explorer.appendChild(blockEl);
   });
 }
 
-function toggleContainer(containerId, isChecked) {
-  const container = currentStructure.find((c) => c.id === containerId);
+function renderBlock(block, hasSlots) {
+  const blockGroup = document.createElement('div');
+  blockGroup.className = 'block-group';
 
-  if (isChecked) {
-    checkedContainers.set(containerId, true);
-
-    container.slots.forEach((slot) => {
-      checkedSlots.delete(slot.id);
-    });
-
-    sendToActiveTab({
-      action: 'highlight',
-      elementId: containerId,
-      label: container.name,
-    });
-  } else {
-    checkedContainers.delete(containerId);
-
-    sendToActiveTab({
-      action: 'clearHighlight',
-      elementId: containerId,
-    });
+  // Block header (clickable row)
+  const blockHeader = document.createElement('div');
+  blockHeader.className = 'item item-block';
+  if (activeItems.has(block.id)) {
+    blockHeader.classList.add('active');
   }
 
-  renderExplorer();
-  updateSummary();
+  // Expand arrow (only if has slots)
+  const arrow = document.createElement('span');
+  arrow.className = 'item-arrow';
+  if (hasSlots) {
+    arrow.textContent = expandedBlocks.has(block.id) ? '▼' : '▶';
+    arrow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleBlockExpand(block.id);
+    });
+  } else {
+    arrow.textContent = '•';
+    arrow.style.color = 'var(--text-muted)';
+  }
+
+  // Block icon (box/cube)
+  const indicator = document.createElement('span');
+  indicator.className = 'item-indicator';
+  indicator.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>`;
+
+  // Block name
+  const name = document.createElement('span');
+  name.className = 'item-name';
+  name.textContent = block.name;
+
+  // Slot count badge
+  if (hasSlots) {
+    const badge = document.createElement('span');
+    badge.className = 'item-badge';
+    badge.textContent = block.slots.length;
+    name.appendChild(badge);
+  }
+
+  blockHeader.appendChild(arrow);
+  blockHeader.appendChild(indicator);
+  blockHeader.appendChild(name);
+
+  // Click to toggle highlight (not on arrow)
+  blockHeader.addEventListener('click', (e) => {
+    if (e.target !== arrow) {
+      toggleItem(block.id, block.name, 'block');
+    }
+  });
+
+  blockGroup.appendChild(blockHeader);
+
+  // Slots within this block
+  if (hasSlots) {
+    const slotsEl = document.createElement('div');
+    slotsEl.className = 'block-children';
+    if (expandedBlocks.has(block.id)) {
+      slotsEl.classList.add('visible');
+    }
+
+    block.slots.forEach((slot) => {
+      const slotEl = renderSlot(slot);
+      slotsEl.appendChild(slotEl);
+    });
+
+    blockGroup.appendChild(slotsEl);
+  }
+
+  return blockGroup;
 }
 
-function toggleSlot(slotId, isChecked, containerId) {
-  const container = currentStructure.find((c) => c.id === containerId);
-  const slot = container.slots.find((s) => s.id === slotId);
+function renderSlot(slot) {
+  const slotEl = document.createElement('div');
+  slotEl.className = 'item item-slot nested';
+  if (activeItems.has(slot.id)) {
+    slotEl.classList.add('active');
+  }
 
-  if (isChecked) {
-    checkedSlots.set(slotId, true);
+  // Slot icon (target/crosshair)
+  const indicator = document.createElement('span');
+  indicator.className = 'item-indicator';
+  indicator.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>`;
 
-    sendToActiveTab({
-      action: 'highlight',
-      elementId: slotId,
-      label: `${container.name} > ${slot.name}`,
-    });
+  // Slot name
+  const name = document.createElement('span');
+  name.className = 'item-name';
+  name.textContent = slot.name;
+
+  slotEl.appendChild(indicator);
+  slotEl.appendChild(name);
+
+  // Click to toggle highlight
+  slotEl.addEventListener('click', () => {
+    toggleItem(slot.id, slot.name, 'slot');
+  });
+
+  return slotEl;
+}
+
+function toggleBlockExpand(blockId) {
+  if (expandedBlocks.has(blockId)) {
+    expandedBlocks.delete(blockId);
   } else {
-    checkedSlots.delete(slotId);
+    expandedBlocks.add(blockId);
+  }
+  renderExplorer();
+}
 
+function toggleItem(itemId, itemName, type) {
+  if (activeItems.has(itemId)) {
+    // Turn off highlight
+    activeItems.delete(itemId);
     sendToActiveTab({
       action: 'clearHighlight',
-      elementId: slotId,
+      elementId: itemId
+    });
+  } else {
+    // Turn on highlight
+    activeItems.add(itemId);
+    sendToActiveTab({
+      action: 'highlight',
+      elementId: itemId,
+      label: itemName,
+      type: type
     });
   }
 
   renderExplorer();
-  updateSummary();
 }
 
 function clearHighlights() {
-  checkedContainers.clear();
-  checkedSlots.clear();
-  expandedContainers.clear();
-
+  activeItems.clear();
   sendToActiveTab({ action: 'clearAll' });
-
   renderExplorer();
-  updateSummary();
 }
 
 function closePanel() {
@@ -266,11 +229,13 @@ function closePanel() {
 }
 
 function updateSummary() {
-  const containerCount = currentStructure ? currentStructure.length : 0;
-  const slotCount = currentStructure
-    ? currentStructure.reduce((sum, c) => sum + c.slots.length, 0)
-    : 0;
+  if (!currentStructure || !currentStructure.totals) {
+    document.getElementById('block-count').textContent = '0';
+    document.getElementById('slot-count').textContent = '0';
+    return;
+  }
 
-  document.getElementById('container-count').textContent = containerCount;
-  document.getElementById('slot-count').textContent = slotCount;
+  const { totals } = currentStructure;
+  document.getElementById('block-count').textContent = totals.blocks;
+  document.getElementById('slot-count').textContent = totals.slots;
 }

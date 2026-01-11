@@ -1,21 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Dropin Inspector",
-  "version": "2.0.0",
-  "description": "Real-time explorer for Adobe Commerce dropin containers and slots",
-  "permissions": ["scripting", "tabs"],
+  "version": "2.2.0",
+  "description": "Real-time explorer for Adobe Commerce dropin blocks and slots",
+  "permissions": ["activeTab", "storage"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Open Dropin Inspector"
+    "default_title": "Toggle Dropin Inspector"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_end"
     }
   ]
 }

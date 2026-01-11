@@ -1,5 +1,5 @@
 /* Demo Inspector Style - Dropin Inspector
-   Focused styling matching Demo Inspector appearance */
+   Hierarchical view: Blocks > Slots */
 
 :root {
   /* Panel */
@@ -9,9 +9,13 @@
   --panel-radius: 16px;
   --btn-radius: 12px;
 
-  /* Gradients */
-  --container-gradient: linear-gradient(135deg, #3b82f6, #2563eb);
-  --slot-gradient: linear-gradient(135deg, #22c55e, #16a34a);
+  /* Type-specific gradients */
+  --block-gradient: linear-gradient(135deg, #818cf8, #6366f1);
+  --slot-gradient: linear-gradient(135deg, #4ade80, #22c55e);
+
+  /* Type-specific colors */
+  --block-color: #6366f1;
+  --slot-color: #22c55e;
 
   /* Text colors */
   --text-primary: #111827;
@@ -109,142 +113,135 @@ body {
   margin-bottom: 12px;
 }
 
-/* Container Group */
-.container-group {
-  margin-bottom: 8px;
+/* Block group */
+.block-group {
+  margin-bottom: 4px;
 }
 
-/* Container Item (Blue Gradient when active) */
-.container-item {
+/* Item - base styles for all clickable items */
+.item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: var(--bg-light);
-  border-radius: var(--btn-radius);
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
   cursor: pointer;
   user-select: none;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.container-item:hover {
+.item:hover {
   background: var(--bg-hover);
-  transform: scale(1.02);
 }
 
-.container-item.active {
-  background: var(--container-gradient);
-  color: white;
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+/* Nested items (slots indented under blocks) */
+.item.nested {
+  margin-left: 20px;
+  padding: 6px 10px;
 }
 
-.container-item.active .arrow {
-  color: white;
-}
-
-.container-item input[type="checkbox"] {
-  cursor: pointer;
-  flex-shrink: 0;
+/* Item arrow (expand/collapse) */
+.item-arrow {
   width: 16px;
-  height: 16px;
-  accent-color: #2563eb;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  flex-shrink: 0;
 }
 
-.container-item .icon {
-  font-size: 14px;
+.item-arrow:hover {
+  color: var(--text-secondary);
 }
 
-.container-item .name {
+/* Item indicator (icon) */
+.item-indicator {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
+.item-indicator svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Item name */
+.item-name {
   flex: 1;
-  font-weight: 500;
   font-size: 13px;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.container-item .arrow {
-  flex-shrink: 0;
-  font-size: 10px;
+/* Item badge (child count) */
+.item-badge {
+  background: var(--border-light);
   color: var(--text-muted);
-  transition: transform 0.2s ease;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: auto;
 }
 
-.container-item.expanded .arrow {
-  transform: rotate(90deg);
-}
-
-/* Slots Container */
-.slots-container {
-  margin-left: 20px;
-  margin-top: 6px;
+/* Block children (slots) container */
+.block-children {
   display: none;
+  margin-top: 4px;
 }
 
-.slots-container.visible {
+.block-children.visible {
   display: block;
 }
 
-/* Slot Item (Green Gradient when active) */
-.slot-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--bg-light);
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-bottom: 4px;
-  cursor: pointer;
-  user-select: none;
-  transition: transform 0.15s ease, background 0.15s ease;
+/* Block items (Indigo) */
+.item-block .item-indicator {
+  color: var(--block-color);
 }
 
-.slot-item:hover {
-  background: var(--bg-hover);
-  transform: scale(1.02);
+.item-block.active {
+  background: var(--block-gradient);
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
-.slot-item.active {
+.item-block.active .item-indicator {
+  color: white;
+  opacity: 1;
+}
+
+.item-block.active .item-arrow {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.item-block.active .item-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+/* Slot items (Green) */
+.item-slot .item-indicator {
+  color: var(--slot-color);
+}
+
+.item-slot.active {
   background: var(--slot-gradient);
   color: white;
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
 }
 
-.slot-item.disabled {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-.slot-item input[type="checkbox"] {
-  cursor: pointer;
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  accent-color: #16a34a;
-}
-
-.slot-item .indicator {
-  font-size: 8px;
-  color: var(--text-muted);
-}
-
-.slot-item.active .indicator {
+.item-slot.active .item-indicator {
   color: white;
-}
-
-.slot-item .name {
-  flex: 1;
-  font-size: 12px;
-}
-
-/* No slots message */
-.no-slots {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 6px 10px;
-  font-style: italic;
+  opacity: 1;
 }
 
 /* Panel Footer */
@@ -277,7 +274,7 @@ body {
 }
 
 .btn-primary {
-  background: var(--container-gradient);
+  background: var(--block-gradient);
   color: white;
 }
 

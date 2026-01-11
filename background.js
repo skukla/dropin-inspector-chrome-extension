@@ -1,4 +1,4 @@
-// Background service worker - minimal for manifest v3
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('Dropin Inspector installed');
+// Background service worker - handles extension icon click
+chrome.action.onClicked.addListener((tab) => {
+  chrome.tabs.sendMessage(tab.id, { action: 'togglePanel' });
 });
