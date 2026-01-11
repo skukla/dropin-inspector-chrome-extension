@@ -44,7 +44,7 @@
       top: 20px;
       right: 20px;
       width: 300px;
-      max-height: 450px;
+      max-height: 90vh;
       background: rgba(255, 255, 255, 0.98);
       border-radius: 12px;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -117,6 +117,15 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 2px 4px;
+      margin: -2px -4px;
+      transition: background 0.15s;
+    }
+
+    .di-summary-text:hover {
+      background: rgba(0, 0, 0, 0.05);
     }
 
     .di-toggle-wrapper {
@@ -169,7 +178,7 @@
       flex: 1;
       overflow-y: auto;
       padding: 8px;
-      max-height: 300px;
+      max-height: calc(90vh - 130px);
     }
 
     .di-block-group {
@@ -370,7 +379,7 @@
         </div>
       </div>
       <div class="di-summary">
-        <span class="di-summary-text" id="di-summary">0 blocks • 0 slots</span>
+        <span class="di-summary-text" id="di-summary" title="Click to collapse/expand all">0 blocks • 0 slots</span>
         <div class="di-toggle-wrapper">
           <span>Empty</span>
           <div class="di-toggle" id="di-toggle-empty" title="Show empty slots/blocks"></div>
@@ -391,6 +400,7 @@
     panel.querySelector('#di-refresh').addEventListener('click', loadStructure);
     panel.querySelector('#di-toggle-all').addEventListener('click', toggleAllHighlights);
     panel.querySelector('#di-toggle-empty').addEventListener('click', toggleEmptySlots);
+    panel.querySelector('#di-summary').addEventListener('click', toggleCollapseAll);
 
     // Drag functionality
     initDrag();
@@ -496,6 +506,39 @@
       toggle.classList.toggle('active', showEmptySlots);
       toggle.title = showEmptySlots ? 'Hide empty slots/blocks' : 'Show empty slots/blocks';
     }
+  }
+
+  function toggleCollapseAll() {
+    // If any blocks are expanded, collapse all; otherwise expand all
+    if (expandedBlocks.size > 0) {
+      expandedBlocks.clear();
+    } else {
+      // Expand all - need to get all expandable item IDs from current structure
+      const structure = initializeStructure();
+      addAllExpandableIds(structure.blocks);
+    }
+    // Re-render to reflect changes
+    loadStructure();
+  }
+
+  function addAllExpandableIds(blocks) {
+    blocks.forEach(block => {
+      // Add block if it has children (slots or nested blocks)
+      if (block.slots.length > 0 || block.children.length > 0) {
+        expandedBlocks.add(block.id);
+      }
+      // Process slots that have nested blocks
+      block.slots.forEach(slot => {
+        if (slot.children && slot.children.length > 0) {
+          expandedBlocks.add(slot.id);
+          addAllExpandableIds(slot.children);
+        }
+      });
+      // Process nested blocks
+      if (block.children.length > 0) {
+        addAllExpandableIds(block.children);
+      }
+    });
   }
 
   // Get vertical position of element for sorting
@@ -744,6 +787,10 @@
         block.slots.forEach(slot => {
           slot.id = `slot-${slotIndex++}`;
           totalSlots++;
+          // Also assign IDs to blocks nested inside this slot
+          if (slot.children && slot.children.length > 0) {
+            assignIds(slot.children);
+          }
         });
         if (block.children.length > 0) {
           assignIds(block.children);
@@ -1034,9 +1081,23 @@
             if (slot.id === elementId) {
               return slot.element;
             }
+            // Also search blocks nested inside this slot
+            if (slot.children && slot.children.length > 0) {
+              const found = findInBlocks(slot.children);
+              if (found) return found;
+            }
           }
         }
-        // Search in children
+        // Search blocks nested inside slots (for block type searches)
+        if (elementType === 'block') {
+          for (const slot of block.slots) {
+            if (slot.children && slot.children.length > 0) {
+              const found = findInBlocks(slot.children);
+              if (found) return found;
+            }
+          }
+        }
+        // Search in child blocks
         if (block.children && block.children.length > 0) {
           const found = findInBlocks(block.children);
           if (found) return found;
