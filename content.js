@@ -250,19 +250,30 @@
     loadStructure();
   }
 
+  function addSlotExpandableIds(slot) {
+    const hasChildren = (slot.childSlots && slot.childSlots.length > 0) ||
+                        (slot.children && slot.children.length > 0);
+    if (hasChildren) {
+      expandedBlocks.add(slot.id);
+      // Process child slots recursively
+      if (slot.childSlots) {
+        slot.childSlots.forEach(childSlot => addSlotExpandableIds(childSlot));
+      }
+      // Process nested blocks
+      if (slot.children && slot.children.length > 0) {
+        addAllExpandableIds(slot.children);
+      }
+    }
+  }
+
   function addAllExpandableIds(blocks) {
     blocks.forEach(block => {
       // Add block if it has children (slots or nested blocks)
       if (block.slots.length > 0 || block.children.length > 0) {
         expandedBlocks.add(block.id);
       }
-      // Process slots that have nested blocks
-      block.slots.forEach(slot => {
-        if (slot.children && slot.children.length > 0) {
-          expandedBlocks.add(slot.id);
-          addAllExpandableIds(slot.children);
-        }
-      });
+      // Process slots (may have child slots or nested blocks)
+      block.slots.forEach(slot => addSlotExpandableIds(slot));
       // Process nested blocks
       if (block.children.length > 0) {
         addAllExpandableIds(block.children);
@@ -274,10 +285,20 @@
   // SECTION: Structure Detection
   // ============================================================================
 
-  // Get vertical position of element for sorting
+  // Get vertical position of element for sorting (used for standalone slots display)
   function getVerticalPosition(el) {
     const rect = el.getBoundingClientRect();
     return rect.top + window.scrollY;
+  }
+
+  // Compare two elements by DOM order (for sorting)
+  // Returns negative if a comes before b, positive if after
+  function compareDomOrder(a, b) {
+    if (a === b) return 0;
+    const position = a.compareDocumentPosition(b);
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
   }
 
   // Check if element is visible (not hidden by CSS)
@@ -373,52 +394,96 @@
       return null;
     }
 
-    // Get direct slots for a block (not in nested blocks)
-    // Also detects blocks that are inside slots
-    function getDirectSlots(blockEl) {
-      const slots = [];
-      const slotsInBlock = Array.from(blockEl.querySelectorAll(SLOT_SELECTOR));
-      slotsInBlock.sort((a, b) => getVerticalPosition(a) - getVerticalPosition(b));
+    // Get the direct parent slot of an element (if any)
+    function getDirectParentSlot(el, withinBlock) {
+      let parent = el.parentElement;
+      while (parent && parent !== withinBlock) {
+        if (parent.hasAttribute && (parent.hasAttribute('data-slot') || parent.hasAttribute('data-slot-key'))) {
+          return parent;
+        }
+        parent = parent.parentElement;
+      }
+      return null;
+    }
 
+    // Recursively build a slot tree
+    function buildSlotTree(slotEl, blockEl) {
+      if (processedSlots.has(slotEl)) return null;
+      if (!isElementVisible(slotEl)) return null;
+
+      processedSlots.add(slotEl);
+
+      // Find direct child slots (slots inside this slot, but not inside deeper nested slots or blocks)
+      const childSlotEls = Array.from(slotEl.querySelectorAll(SLOT_SELECTOR)).filter(childEl => {
+        if (processedSlots.has(childEl)) return false;
+        if (childEl === slotEl) return false;
+        // Check that this slot's direct parent slot is the current slot
+        const parentSlot = getDirectParentSlot(childEl, blockEl);
+        if (parentSlot !== slotEl) return false;
+        // Check that it's not inside a nested block
+        const parentBlock = getDirectParentBlock(childEl);
+        if (parentBlock && parentBlock !== blockEl) return false;
+        return true;
+      });
+      childSlotEls.sort((a, b) => compareDomOrder(a, b));
+
+      // Recursively build child slots
+      const childSlots = childSlotEls
+        .map(el => buildSlotTree(el, blockEl))
+        .filter(s => s !== null);
+
+      // Find blocks that are inside this slot (but not in deeper nested slots or blocks)
+      const blocksInSlot = [];
+      blockElements.forEach(nestedBlockEl => {
+        if (processedBlocks.has(nestedBlockEl)) return;
+        if (!slotEl.contains(nestedBlockEl)) return;
+        // Check if there's a closer parent block
+        const nestedParentBlock = getDirectParentBlock(nestedBlockEl);
+        if (nestedParentBlock && nestedParentBlock !== blockEl) return;
+        // Check if there's a parent slot between this slot and the block
+        const nestedParentSlot = getDirectParentSlot(nestedBlockEl, blockEl);
+        if (nestedParentSlot && nestedParentSlot !== slotEl) return;
+        // Check visibility
+        const nestedBlockName = nestedBlockEl.getAttribute('data-block-name');
+        if (!isElementVisible(nestedBlockEl, nestedBlockName)) {
+          processedBlocks.add(nestedBlockEl);
+          return;
+        }
+        blocksInSlot.push(nestedBlockEl);
+      });
+      blocksInSlot.sort((a, b) => compareDomOrder(a, b));
+      const nestedBlocks = blocksInSlot.map(el => buildBlockTree(el, 0));
+
+      return {
+        name: slotEl.getAttribute('data-slot') || slotEl.getAttribute('data-slot-key') || 'Unnamed Slot',
+        element: slotEl,
+        childSlots: childSlots,      // Slots nested inside this slot
+        children: nestedBlocks       // Blocks nested inside this slot
+      };
+    }
+
+    // Get direct slots for a block (not in nested blocks or parent slots)
+    function getDirectSlots(blockEl) {
+      const slotsInBlock = Array.from(blockEl.querySelectorAll(SLOT_SELECTOR));
+      slotsInBlock.sort((a, b) => compareDomOrder(a, b));
+
+      const slots = [];
       slotsInBlock.forEach((slotEl) => {
         if (processedSlots.has(slotEl)) return;
 
         // Check if this slot belongs to a nested block
         const slotParentBlock = getDirectParentBlock(slotEl);
-        if (slotParentBlock && slotParentBlock !== blockEl) return; // Belongs to a nested block
+        if (slotParentBlock && slotParentBlock !== blockEl) return;
 
-        // Skip slots with no visible dimensions
-        if (!isElementVisible(slotEl)) return;
+        // Check if this slot is inside another slot (it will be processed as a child)
+        const slotParentSlot = getDirectParentSlot(slotEl, blockEl);
+        if (slotParentSlot) return; // Will be processed as child of parent slot
 
-        processedSlots.add(slotEl);
-
-        // Find blocks that are inside this slot (but not in deeper nested blocks)
-        const blocksInSlot = [];
-        blockElements.forEach(nestedBlockEl => {
-          if (processedBlocks.has(nestedBlockEl)) return;
-          // Check if this block is inside the slot
-          if (!slotEl.contains(nestedBlockEl)) return;
-          // Check if there's a closer parent block between the slot and this block
-          const nestedParentBlock = getDirectParentBlock(nestedBlockEl);
-          if (nestedParentBlock && nestedParentBlock !== blockEl) return; // Has a closer parent block
-          // Check visibility (pass block name for header/footer exception)
-          const nestedBlockName = nestedBlockEl.getAttribute('data-block-name');
-          if (!isElementVisible(nestedBlockEl, nestedBlockName)) {
-            processedBlocks.add(nestedBlockEl);
-            return;
-          }
-          blocksInSlot.push(nestedBlockEl);
-        });
-        blocksInSlot.sort((a, b) => getVerticalPosition(a) - getVerticalPosition(b));
-
-        // Build nested blocks inside this slot
-        const nestedBlocks = blocksInSlot.map(el => buildBlockTree(el, 0)); // depth will be adjusted during rendering
-
-        slots.push({
-          name: slotEl.getAttribute('data-slot') || slotEl.getAttribute('data-slot-key') || 'Unnamed Slot',
-          element: slotEl,
-          children: nestedBlocks // Blocks nested inside this slot
-        });
+        // Build the slot tree recursively
+        const slotTree = buildSlotTree(slotEl, blockEl);
+        if (slotTree) {
+          slots.push(slotTree);
+        }
       });
 
       return slots;
@@ -440,7 +505,8 @@
           children.push(blockEl);
         }
       });
-      children.sort((a, b) => getVerticalPosition(a) - getVerticalPosition(b));
+      // Sort by DOM order to preserve document structure
+      children.sort((a, b) => compareDomOrder(a, b));
       return children;
     }
 
@@ -471,7 +537,7 @@
       const blockName = el.getAttribute('data-block-name');
       return isElementVisible(el, blockName);
     });
-    topLevelBlocks.sort((a, b) => getVerticalPosition(a) - getVerticalPosition(b));
+    topLevelBlocks.sort((a, b) => compareDomOrder(a, b));
 
     // Build tree from top-level blocks
     const blocks = topLevelBlocks.map(el => buildBlockTree(el));
@@ -495,7 +561,7 @@
       });
     });
 
-    standaloneSlots.sort((a, b) => getVerticalPosition(a.element) - getVerticalPosition(b.element));
+    standaloneSlots.sort((a, b) => compareDomOrder(a.element, b.element));
 
     if (standaloneSlots.length > 0) {
       blocks.push({
@@ -513,18 +579,24 @@
     let totalBlocks = 0;
     let totalSlots = 0;
 
+    function assignSlotIds(slot) {
+      slot.id = `slot-${slotIndex++}`;
+      totalSlots++;
+      // Recursively assign IDs to child slots
+      if (slot.childSlots && slot.childSlots.length > 0) {
+        slot.childSlots.forEach(childSlot => assignSlotIds(childSlot));
+      }
+      // Also assign IDs to blocks nested inside this slot
+      if (slot.children && slot.children.length > 0) {
+        assignIds(slot.children);
+      }
+    }
+
     function assignIds(blockList) {
       blockList.forEach(block => {
         block.id = `block-${blockIndex++}`;
         totalBlocks++;
-        block.slots.forEach(slot => {
-          slot.id = `slot-${slotIndex++}`;
-          totalSlots++;
-          // Also assign IDs to blocks nested inside this slot
-          if (slot.children && slot.children.length > 0) {
-            assignIds(slot.children);
-          }
-        });
+        block.slots.forEach(slot => assignSlotIds(slot));
         if (block.children.length > 0) {
           assignIds(block.children);
         }
@@ -615,16 +687,22 @@
     const blockMap = new Map();
     const slotMap = new Map();
 
+    function mapSlot(slot) {
+      slotMap.set(slot.id, slot);
+      // Recursively map child slots
+      if (slot.childSlots && slot.childSlots.length > 0) {
+        slot.childSlots.forEach(childSlot => mapSlot(childSlot));
+      }
+      // Also map blocks nested inside this slot
+      if (slot.children && slot.children.length > 0) {
+        mapBlocksAndSlots(slot.children);
+      }
+    }
+
     function mapBlocksAndSlots(blockList) {
       blockList.forEach(block => {
         blockMap.set(block.id, block);
-        block.slots.forEach(slot => {
-          slotMap.set(slot.id, slot);
-          // Also map blocks nested inside this slot
-          if (slot.children && slot.children.length > 0) {
-            mapBlocksAndSlots(slot.children);
-          }
-        });
+        block.slots.forEach(slot => mapSlot(slot));
         if (block.children.length > 0) {
           mapBlocksAndSlots(block.children);
         }
@@ -672,8 +750,10 @@
 
       const arrow = slotEl.querySelector('.di-arrow');
 
-      // Handle arrow click for slots with nested blocks
-      if (arrow && slot.children && slot.children.length > 0) {
+      // Handle arrow click for slots with nested slots or blocks
+      const hasChildren = (slot.childSlots && slot.childSlots.length > 0) ||
+                          (slot.children && slot.children.length > 0);
+      if (arrow && hasChildren) {
         arrow.addEventListener('click', (e) => {
           e.stopPropagation();
           const childrenContainer = slotEl.nextElementSibling;
@@ -712,14 +792,14 @@
     if (hasChildren) {
       html += `<div class="di-children${isExpanded ? ' visible' : ''}" data-parent="${block.id}">`;
 
-      // Combine blocks and slots, then sort by vertical position
+      // Combine blocks and slots, then sort by DOM order
       const allChildren = [];
 
       block.children.forEach(childBlock => {
         allChildren.push({
           type: 'block',
           item: childBlock,
-          position: getVerticalPosition(childBlock.element)
+          element: childBlock.element
         });
       });
 
@@ -727,42 +807,84 @@
         allChildren.push({
           type: 'slot',
           item: slot,
-          position: getVerticalPosition(slot.element)
+          element: slot.element
         });
       });
 
-      // Sort by vertical position (top to bottom), DOM order preserved for same position
-      allChildren.sort((a, b) => a.position - b.position);
+      // Sort by DOM order to preserve document structure
+      allChildren.sort((a, b) => compareDomOrder(a.element, b.element));
 
       // Render in sorted order
       allChildren.forEach(child => {
         if (child.type === 'block') {
           html += `<div class="di-block-group">${renderBlock(child.item, depth + 1)}</div>`;
         } else {
-          // Render slot (may have nested blocks inside)
-          const slot = child.item;
-          const slotActive = activeItems.has(slot.id);
-          const slotIndent = (depth + 1) * 16;
-          const slotHasChildren = slot.children && slot.children.length > 0;
-          const slotExpanded = expandedBlocks.has(slot.id);
+          // Render slot (may have nested slots and/or blocks inside)
+          html += `<div class="di-slot-group">${renderSlot(child.item, depth + 1)}</div>`;
+        }
+      });
 
-          html += `
-            <div class="di-slot-group">
-              <div class="di-item di-item-slot nested${slotActive ? ' active' : ''}" style="margin-left: ${slotIndent}px" data-slot-id="${slot.id}">
-                <span class="di-arrow">${slotHasChildren ? (slotExpanded ? '▼' : '▶') : ''}</span>
-                <span class="di-icon">${ICONS.slot}</span>
-                <span class="di-name">${escapeHtml(slot.name)}</span>
-                ${slotHasChildren ? `<span class="di-badge">${slot.children.length}</span>` : ''}
-              </div>
-              ${slotHasChildren ? `
-                <div class="di-children${slotExpanded ? ' visible' : ''}" data-parent="${slot.id}">
-                  ${slot.children.map(nestedBlock =>
-                    `<div class="di-block-group">${renderBlock(nestedBlock, depth + 2)}</div>`
-                  ).join('')}
-                </div>
-              ` : ''}
-            </div>
-          `;
+      html += '</div>';
+    }
+
+    return html;
+  }
+
+  // Render a slot with its nested child slots and blocks
+  function renderSlot(slot, depth) {
+    const slotActive = activeItems.has(slot.id);
+    const slotIndent = depth * 16;
+
+    // Count all children (child slots + nested blocks)
+    const childSlotCount = (slot.childSlots && slot.childSlots.length) || 0;
+    const nestedBlockCount = (slot.children && slot.children.length) || 0;
+    const totalChildren = childSlotCount + nestedBlockCount;
+    const slotHasChildren = totalChildren > 0;
+    const slotExpanded = expandedBlocks.has(slot.id);
+
+    let html = `
+      <div class="di-item di-item-slot nested${slotActive ? ' active' : ''}" style="margin-left: ${slotIndent}px" data-slot-id="${slot.id}">
+        <span class="di-arrow">${slotHasChildren ? (slotExpanded ? '▼' : '▶') : ''}</span>
+        <span class="di-icon">${ICONS.slot}</span>
+        <span class="di-name">${escapeHtml(slot.name)}</span>
+        ${slotHasChildren ? `<span class="di-badge">${totalChildren}</span>` : ''}
+      </div>
+    `;
+
+    if (slotHasChildren) {
+      html += `<div class="di-children${slotExpanded ? ' visible' : ''}" data-parent="${slot.id}">`;
+
+      // Combine child slots and nested blocks, sort by DOM order
+      const allSlotChildren = [];
+
+      if (slot.childSlots) {
+        slot.childSlots.forEach(childSlot => {
+          allSlotChildren.push({
+            type: 'slot',
+            item: childSlot,
+            element: childSlot.element
+          });
+        });
+      }
+
+      if (slot.children) {
+        slot.children.forEach(nestedBlock => {
+          allSlotChildren.push({
+            type: 'block',
+            item: nestedBlock,
+            element: nestedBlock.element
+          });
+        });
+      }
+
+      allSlotChildren.sort((a, b) => compareDomOrder(a.element, b.element));
+
+      // Render children
+      allSlotChildren.forEach(child => {
+        if (child.type === 'slot') {
+          html += `<div class="di-slot-group">${renderSlot(child.item, depth + 1)}</div>`;
+        } else {
+          html += `<div class="di-block-group">${renderBlock(child.item, depth + 1)}</div>`;
         }
       });
 
@@ -814,27 +936,48 @@
     const elementType = elementId.split('-')[0];
     let element = null;
 
+    // Helper to search for a slot by ID recursively through childSlots
+    function findInSlot(slot) {
+      if (slot.id === elementId) {
+        return slot.element;
+      }
+      // Search child slots recursively
+      if (slot.childSlots && slot.childSlots.length > 0) {
+        for (const childSlot of slot.childSlots) {
+          const found = findInSlot(childSlot);
+          if (found) return found;
+        }
+      }
+      // Search blocks nested inside this slot
+      if (slot.children && slot.children.length > 0) {
+        const found = findInBlocks(slot.children);
+        if (found) return found;
+      }
+      return null;
+    }
+
     // Helper to find block or slot by ID in nested structure
     function findInBlocks(blocks) {
       for (const block of blocks) {
         if (elementType === 'block' && block.id === elementId) {
           return block.element;
         }
+        // Search slots (including nested child slots)
         if (elementType === 'slot') {
           for (const slot of block.slots) {
-            if (slot.id === elementId) {
-              return slot.element;
-            }
-            // Also search blocks nested inside this slot
-            if (slot.children && slot.children.length > 0) {
-              const found = findInBlocks(slot.children);
-              if (found) return found;
-            }
+            const found = findInSlot(slot);
+            if (found) return found;
           }
         }
         // Search blocks nested inside slots (for block type searches)
         if (elementType === 'block') {
           for (const slot of block.slots) {
+            if (slot.childSlots && slot.childSlots.length > 0) {
+              for (const childSlot of slot.childSlots) {
+                const found = findInSlot(childSlot);
+                if (found) return found;
+              }
+            }
             if (slot.children && slot.children.length > 0) {
               const found = findInBlocks(slot.children);
               if (found) return found;
@@ -956,6 +1099,22 @@
   function showAllHighlights() {
     const structure = initializeStructure();
 
+    // Helper to highlight a slot and its children recursively
+    function highlightSlot(slot) {
+      if (!activeItems.has(slot.id)) {
+        activeItems.add(slot.id);
+        highlightElement(slot.id, slot.name, structure, true);
+      }
+      // Highlight child slots recursively
+      if (slot.childSlots && slot.childSlots.length > 0) {
+        slot.childSlots.forEach(childSlot => highlightSlot(childSlot));
+      }
+      // Highlight nested blocks
+      if (slot.children && slot.children.length > 0) {
+        highlightAll(slot.children);
+      }
+    }
+
     // Helper to highlight all blocks and slots recursively (skip scroll)
     function highlightAll(blocks) {
       blocks.forEach(block => {
@@ -963,12 +1122,7 @@
           activeItems.add(block.id);
           highlightElement(block.id, block.name, structure, true);
         }
-        block.slots.forEach(slot => {
-          if (!activeItems.has(slot.id)) {
-            activeItems.add(slot.id);
-            highlightElement(slot.id, slot.name, structure, true);
-          }
-        });
+        block.slots.forEach(slot => highlightSlot(slot));
         if (block.children && block.children.length > 0) {
           highlightAll(block.children);
         }
