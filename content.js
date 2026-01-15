@@ -180,13 +180,15 @@
     }
   }
 
-  function showPanel() {
+  function showPanel(skipSave = false) {
     if (!panel) createPanel();
     panel.classList.remove('hidden');
     isVisible = true;
     loadStructure();
     startObserver(); // Watch for async-loaded dropins
-    saveState();
+    if (!skipSave) {
+      saveState();
+    }
   }
 
   function hidePanel() {
@@ -304,20 +306,20 @@
   // Check if element is visible (not hidden by CSS)
   // Filters out empty slots/placeholders that have no rendered content (unless showEmptySlots is on)
   function isElementVisible(el, blockName = null) {
+    // If showing empty slots, show everything (skip all visibility checks)
+    if (showEmptySlots) {
+      return true;
+    }
+
     const style = window.getComputedStyle(el);
 
-    // Check for explicitly hidden elements (always filter these)
+    // Check for explicitly hidden elements
     if (style.display === 'none') return false;
     if (style.visibility === 'hidden') return false;
     if (style.opacity === '0') return false;
 
     // Check dimensions
     const rect = el.getBoundingClientRect();
-
-    // If showing empty slots, only filter truly hidden elements
-    if (showEmptySlots) {
-      return true;
-    }
 
     // Always show header and footer - they're fundamental structural elements
     if (blockName) {
@@ -1373,15 +1375,32 @@
 
   // Save panel state to storage
   function saveState() {
-    chrome.storage.local.set({
+    let position = null;
+
+    if (panel) {
+      // Only save position if it has been explicitly set (via dragging)
+      // Check if left is set (dragging sets left and clears right)
+      if (panel.style.left && panel.style.left !== 'auto') {
+        position = {
+          top: panel.style.top,
+          left: panel.style.left,
+          right: panel.style.right
+        };
+      }
+      // If no explicit position set, don't overwrite any saved position
+    }
+
+    const stateToSave = {
       [STORAGE_KEY_VISIBLE]: isVisible,
-      [STORAGE_KEY_POSITION]: panel ? {
-        top: panel.style.top,
-        left: panel.style.left,
-        right: panel.style.right
-      } : null,
       [STORAGE_KEY_SHOW_EMPTY]: showEmptySlots
-    });
+    };
+
+    // Only include position if we have one to save
+    if (position) {
+      stateToSave[STORAGE_KEY_POSITION] = position;
+    }
+
+    chrome.storage.local.set(stateToSave);
   }
 
   // Restore panel state from storage
@@ -1393,17 +1412,27 @@
       }
 
       if (result[STORAGE_KEY_VISIBLE]) {
-        showPanel();
+        // Pass skipSave=true to avoid overwriting saved position
+        showPanel(true);
 
         // Restore position if saved
         if (result[STORAGE_KEY_POSITION] && panel) {
           const pos = result[STORAGE_KEY_POSITION];
           if (pos.left && pos.left !== 'auto') {
-            panel.style.left = pos.left;
+            // Parse position and ensure it's within viewport bounds
+            let left = parseInt(pos.left, 10);
+            let top = parseInt(pos.top, 10) || 20;
+
+            // Ensure panel stays within viewport
+            const maxLeft = window.innerWidth - panel.offsetWidth - 20;
+            const maxTop = window.innerHeight - 100; // Leave some visible
+
+            left = Math.max(20, Math.min(left, maxLeft));
+            top = Math.max(20, Math.min(top, maxTop));
+
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
             panel.style.right = 'auto';
-          }
-          if (pos.top) {
-            panel.style.top = pos.top;
           }
         }
 
@@ -1460,6 +1489,26 @@
   chrome.runtime.onMessage.addListener((request) => {
     if (request.action === 'togglePanel') {
       togglePanel();
+    }
+  });
+
+  // Keep panel in bounds when window is resized
+  window.addEventListener('resize', () => {
+    if (!panel || !isVisible) return;
+
+    // Only adjust if position was explicitly set (dragged)
+    if (panel.style.left && panel.style.left !== 'auto') {
+      const left = parseInt(panel.style.left, 10);
+      const top = parseInt(panel.style.top, 10);
+      const maxLeft = window.innerWidth - panel.offsetWidth - 20;
+      const maxTop = window.innerHeight - 100;
+
+      // Adjust if out of bounds
+      if (left > maxLeft || top > maxTop) {
+        panel.style.left = Math.max(20, Math.min(left, maxLeft)) + 'px';
+        panel.style.top = Math.max(20, Math.min(top, maxTop)) + 'px';
+        saveState();
+      }
     }
   });
 

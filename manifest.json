@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dropin Inspector",
-  "version": "2.2.0",
+  "version": "2.4.0",
   "description": "Real-time explorer for Adobe Commerce dropin blocks and slots",
   "permissions": ["activeTab", "storage", "scripting"],
   "background": {
